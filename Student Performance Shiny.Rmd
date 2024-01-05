@@ -1,0 +1,199 @@
+---
+title: "Student Performance"
+format: html
+editor: visual
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: fill
+runtime: shiny
+---
+
+```{r global, include=FALSE}
+#| echo: false
+rm(list = ls())
+library(shiny)
+library(dplyr)
+library(shinydashboard)
+library(ggplot2)
+library(gt)
+library(DT)
+library(bslib)
+library(flexdashboard)
+library(bsicons)
+library(stringr)
+library(rsconnect)
+rsconnect::setAccountInfo(name='aanchal-dusija', token='E2D92037FE4C31376D53D2652CD72969', secret='u0gOKbkPF7H2Ubhdg3h9JrZBWCHdKqL7UPKZPnZr')
+# rsconnect::deployApp('')
+url <- "https://raw.githubusercontent.com/anly503/datasets/main/student_points.csv"
+data <- read.csv(url)
+# Normalized scores
+data$points_normalized <- 100*(data$points/data$max_points_possible)
+
+# create new column by keeping only last 2 values of the data column
+data$semester_week<-as.integer(str_extract(string = data$assignment,pattern = "\\d+"))
+
+# Original Data
+data_og<-data[,c(1:10)]
+```
+
+# Summary
+
+## Row
+
+### Students {.value-box}
+
+```{r}
+# font colour white?
+renderValueBox({valueBox(
+  value = 125,
+  color = "#deebf7")})
+```
+
+### Lab points (average) {.value-box}
+
+```{r}
+renderValueBox({valueBox(
+  value = 88.6,
+  color = "#deebf7"
+)})
+```
+
+### Assignment points (average) {.value-box}
+
+```{r}
+renderValueBox({valueBox(
+  value = 85.5,
+  color = "#deebf7"
+)})
+```
+
+## Row
+
+### Weekly Performance
+
+```{r, fig.width=12}
+renderPlot(
+  data %>%
+    group_by(semester_week, assignment_type) %>%
+    summarise(sd = sd(points_normalized, na.rm = T), points_normalized = mean(points_normalized)) %>%
+    ggplot() +
+    geom_col(aes(x = semester_week, y = points_normalized, fill = assignment_type), alpha = 1) +
+    geom_errorbar(aes(x = semester_week, ymin = points_normalized - sd, ymax = points_normalized + sd), 
+                  width = 0.25, colour = "black", alpha = 0.9, size = 0.9, position = position_dodge2(width = 0.5, padding = 0.5)) +
+    scale_fill_manual(values = c("homework" = "#9ecae1", "lab" = "#3182bd")) +
+    scale_x_continuous(breaks = 1:11, name = "Semester Week") +  # Fix x-axis label here
+    scale_y_continuous(breaks = c(0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100)) +
+    facet_wrap(~ assignment_type, nrow = 2) +
+    theme(panel.border = element_blank(),
+          panel.grid.major = element_line(colour = "grey90", size = 0.25),
+          panel.grid.minor = element_line(colour = "grey95"),
+          plot.background = element_rect(fill = "grey95"),
+          panel.background = element_rect(fill = "grey95"),
+          legend.position = "none",
+          axis.line = element_blank(),
+          strip.background = element_blank(), strip.placement = "outside",
+          axis.title.x = element_text(color = "black", size = 14),
+          axis.title.y = element_text(color = "black", size = 14),
+          plot.title = element_text(size = 16, face = "bold", hjust = 0),
+          plot.title.position = "plot") +
+    labs(title = "Week by week average scores of students in XU-789",
+         subtitle = "Large Standard deviation indicates a huge variation in student performace",
+         caption = "Data source: https://raw.githubusercontent.com/anly503/datasets/main/student_points.csv",
+         x = "Semester Week",
+         y = "Normalized score out of 100%")
+)
+
+
+```
+
+### Student Scores
+
+```{r}
+
+
+data_hw = data %>% filter(assignment_type=="homework")
+data_lab = data %>% filter(assignment_type=="lab")
+
+data_hw1 = data_hw %>% 
+  group_by(student_name) %>%
+  summarise(homeworkpoints = mean(points_normalized))
+
+data_lab1 = data_lab %>% 
+  group_by(student_name) %>%
+  summarise(labpoints = mean(points_normalized))
+
+datatable1= merge(data_hw1,data_lab1, by='student_name')
+
+
+datatable2 <- gt(datatable1) %>% 
+  tab_header(
+    title = "Student Scores",
+    subtitle = "Average normalized scores for homeworks and labs"
+  ) %>% 
+  cols_label(
+    student_name = "Student Name", 
+    homeworkpoints = "Homework Points (%)", 
+    labpoints = "Lab points (%)"
+  )
+div(style='height:100%;  overflow-y: scroll', render_gt(datatable2) )
+
+```
+
+# Data
+
+## \## Column {.sidebar}
+
+### Select Student
+
+```{r}
+selectInput("student", "Select a student:",
+                  choices = c(unique(data_og$student),"All Students"),
+            selected = "All Students")
+
+mainPanel(
+      dataTableOutput("table"))
+```
+
+## \## Column
+
+### Raw Data
+
+```{r}
+renderDataTable({
+  if(input$student == "All Students") {
+    datatable(data_og,
+              extensions = c("Buttons"), # Add the Buttons extension
+              options = list(
+                scrollX = TRUE,
+                pageLength = 30,
+                searching = TRUE,
+                ordering = TRUE,
+                lengthMenu = list(
+                  c(30, 50, 100, 500, -1), # Set options for the dropdown button
+                  c("30", "50", "100", "500", "All")
+                ),
+                dom = 'Blfrtip', # Add the buttons to the table layout
+                buttons = c('copy', 'csv', 'excel', 'pdf')
+              )
+    )
+  } else {
+    datatable(data_og[data_og$student == input$student,],
+              extensions = c("Buttons"), # Add the Buttons extension
+              options = list(
+                scrollX = TRUE,
+                pageLength = 30,
+                searching = TRUE,
+                ordering = TRUE,
+                lengthMenu = list(
+                  c(30, 50, 100, 500, -1), # Set options for the dropdown button
+                  c("30", "50", "100", "500", "All")
+                ),
+                dom = 'Blfrtip', # Add the buttons to the table layout
+                buttons = c('copy', 'csv', 'excel', 'pdf')
+              )
+    )
+  }
+})
+
+```
